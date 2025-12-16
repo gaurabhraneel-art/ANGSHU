@@ -1,0 +1,316 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Flappy Face Game</title>
+
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #ff8c1a;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    touch-action: none; /* Crucial for mobile performance */
+  }
+  canvas {
+    display: block;
+  }
+</style>
+</head>
+
+<body>
+<canvas id="game"></canvas>
+
+<script>
+/* ================== SETUP ================== */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// Game States
+const STATE = {
+  START: 0,
+  PLAYING: 1,
+  GAMEOVER: 2
+};
+
+let currentState = STATE.START;
+let frames = 0; // Global frame counter
+
+/* ================== ASSETS ================== */
+// --- CHANGES START HERE ---
+const birdImg = new Image();
+// Set the default player image
+birdImg.src = 'image_1.png'; 
+
+const crashImg = new Image();
+// Set the crash image (clown face)
+crashImg.src = 'image_2.png';
+
+const pipeImg = new Image();
+pipeImg.src = 'images.png'; 
+// --- CHANGES END HERE ---
+
+/* ================== GAME VARIABLES ================== */
+let gravity = 0.5;
+let lift = -8; 
+let bird = {
+  x: 50,
+  y: 150,
+  w: 50,
+  h: 50,
+  velocity: 0,
+  radius: 20
+};
+
+// Pipe Settings
+const pipeWidth = 80;
+const gap = 190;
+const pipeSpawnRate = 90; // How often pipes appear
+let pipes = [];
+
+// Score
+let score = 0;
+let highScore = localStorage.getItem('flappyHighScore') || 0;
+
+/* ================== RESIZE HANDLING ================== */
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  bird.x = canvas.width / 4; 
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* ================== CONTROLS ================== */
+function inputAction() {
+  switch (currentState) {
+    case STATE.START:
+      // Click to Start
+      currentState = STATE.PLAYING;
+      resetGame();
+      bird.velocity = lift;
+      break;
+    
+    case STATE.PLAYING:
+      // Flap
+      bird.velocity = lift;
+      break;
+      
+    case STATE.GAMEOVER:
+      // Click to Restart (only works after 30 frames/0.5s)
+      if (frames > 30) { 
+        currentState = STATE.START;
+        frames = 0;
+      }
+      break;
+  }
+}
+
+// Bind Inputs
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' || e.code === 'ArrowUp') inputAction();
+});
+window.addEventListener('mousedown', inputAction);
+window.addEventListener('touchstart', (e) => {
+  e.preventDefault(); // Stop screen scrolling
+  inputAction();
+}, {passive: false});
+
+/* ================== LOGIC ================== */
+function resetGame() {
+  bird.y = canvas.height / 2;
+  bird.velocity = 0;
+  pipes = [];
+  score = 0;
+  frames = 0;
+}
+
+function updateGameLogic() {
+  // 1. Bird Physics
+  bird.velocity += gravity;
+  bird.y += bird.velocity;
+
+  // Floor Collision
+  if (bird.y + bird.radius >= canvas.height) {
+    bird.y = canvas.height - bird.radius;
+    triggerGameOver();
+  }
+  
+  // 2. Pipe Spawning
+  if (frames % pipeSpawnRate === 0) {
+    const minTop = 50;
+    const maxTop = canvas.height - gap - 50;
+    const topHeight = Math.random() * (maxTop - minTop) + minTop;
+    
+    pipes.push({
+      x: canvas.width,
+      top: topHeight,
+      bottom: canvas.height - topHeight - gap,
+      passed: false
+    });
+  }
+
+  // 3. Pipe Movement & Collision
+  for (let i = 0; i < pipes.length; i++) {
+    let p = pipes[i];
+    p.x -= 4; // Move pipe left
+
+    // Collision Check (Circle vs Rectangle)
+    if (
+      bird.x + bird.radius > p.x && 
+      bird.x - bird.radius < p.x + pipeWidth &&
+      (bird.y - bird.radius < p.top || bird.y + bird.radius > canvas.height - p.bottom)
+    ) {
+      triggerGameOver();
+    }
+
+    // Score Update
+    if (p.x + pipeWidth < bird.x && !p.passed) {
+      score++;
+      p.passed = true;
+    }
+
+    // Remove old pipes
+    if (p.x + pipeWidth < 0) {
+      pipes.shift();
+      i--;
+    }
+  }
+}
+
+function triggerGameOver() {
+  currentState = STATE.GAMEOVER;
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('flappyHighScore', highScore);
+  }
+  // Reset frames to 0 so we can count the cooldown
+  frames = 0; 
+}
+
+/* ================== DRAWING ================== */
+function draw() {
+  // Clear & Background
+  ctx.fillStyle = '#ff8c1a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Background Pattern
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  ctx.lineWidth = 4;
+  let bgOffset = (Date.now() / 20) % 100;
+  for (let i = -100; i < canvas.width + 100; i += 100) {
+    ctx.beginPath();
+    ctx.moveTo(i - bgOffset, 0);
+    ctx.lineTo(i - bgOffset + 50, canvas.height);
+    ctx.stroke();
+  }
+
+  // Draw Pipes
+  pipes.forEach(p => {
+    if (pipeImg.complete && pipeImg.naturalWidth !== 0) {
+       ctx.drawImage(pipeImg, p.x, 0, pipeWidth, p.top); 
+       ctx.drawImage(pipeImg, p.x, canvas.height - p.bottom, pipeWidth, p.bottom);
+    } else {
+       // Fallback graphics
+       ctx.fillStyle = '#8B4513';
+       ctx.fillRect(p.x, 0, pipeWidth, p.top);
+       ctx.fillRect(p.x, canvas.height - p.bottom, pipeWidth, p.bottom);
+       ctx.strokeStyle = '#fff';
+       ctx.strokeRect(p.x, 0, pipeWidth, p.top);
+       ctx.strokeRect(p.x, canvas.height - p.bottom, pipeWidth, p.bottom);
+    }
+  });
+
+  // Draw Bird
+  ctx.save();
+  ctx.translate(bird.x, bird.y);
+  let rot = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, bird.velocity * 0.1));
+  ctx.rotate(rot);
+  
+  // --- CHANGES START HERE ---
+  let currentBirdImage = birdImg;
+
+  // Check if the game is over and the crash image is loaded
+  if (currentState === STATE.GAMEOVER && crashImg.complete && crashImg.naturalWidth !== 0) {
+    currentBirdImage = crashImg;
+  }
+  
+  // Draw the appropriate image
+  if (currentBirdImage.complete && currentBirdImage.naturalWidth !== 0) {
+    ctx.drawImage(currentBirdImage, -bird.w/2, -bird.h/2, bird.w, bird.h);
+  } else {
+    // Fallback graphics
+    ctx.fillStyle = 'white';
+    ctx.beginPath();
+    ctx.arc(0, 0, bird.radius, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = 'black';
+    ctx.beginPath();
+    ctx.arc(10, -5, 5, 0, Math.PI*2);
+    ctx.fill();
+  }
+  // --- CHANGES END HERE ---
+  
+  ctx.restore();
+
+  // Draw UI
+  drawUI();
+}
+
+function drawUI() {
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 3;
+  ctx.textAlign = 'center';
+
+  if (currentState === STATE.START) {
+    ctx.font = 'bold 40px Arial';
+    ctx.strokeText("FLAPPY FACE", canvas.width/2, canvas.height/2 - 50);
+    ctx.fillText("FLAPPY FACE", canvas.width/2, canvas.height/2 - 50);
+    ctx.font = '20px Arial';
+    ctx.fillText("Tap to Start", canvas.width/2, canvas.height/2 + 10);
+
+  } else if (currentState === STATE.PLAYING) {
+    ctx.font = 'bold 50px Arial';
+    ctx.strokeText(score, canvas.width/2, 80);
+    ctx.fillText(score, canvas.width/2, 80);
+    
+  } else if (currentState === STATE.GAMEOVER) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 50px Arial';
+    ctx.strokeText("GAME OVER", canvas.width/2, canvas.height/2 - 40);
+    ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2 - 40);
+
+    ctx.font = '24px Arial';
+    ctx.fillText("Score: " + score, canvas.width/2, canvas.height/2 + 20);
+    ctx.fillText("Best: " + highScore, canvas.width/2, canvas.height/2 + 50);
+    
+    // Blink "Tap to Restart"
+    if (frames > 30 && Math.floor(Date.now() / 500) % 2 === 0) {
+      ctx.font = '18px Arial';
+      ctx.fillText("Tap to Restart", canvas.width/2, canvas.height/2 + 100);
+    }
+  }
+}
+
+/* ================== LOOP ================== */
+function loop() {
+  // Always increment frames (fixes the restart bug)
+  frames++;
+
+  if (currentState === STATE.PLAYING) {
+    updateGameLogic();
+  }
+  draw();
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
